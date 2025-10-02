@@ -1,0 +1,72 @@
+# Ambientes virtuais Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# Arquivos Python compilados
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribuição / empacotamento
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Banco de dados
+*.db
+*.sqlite
+*.sqlite3
+
+# Arquivos de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Arquivos de teste
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Arquivos de configuração local
+.env
+.env.local
+*.local
+
+# Arquivos temporários
+*.tmp
+*.temp
+temp/
+tmp/
