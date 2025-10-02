@@ -1,5 +1,5 @@
 # Ambientes virtuais Python
-env/
+neoenv/
 venv/
 ENV/
 env.bak/
