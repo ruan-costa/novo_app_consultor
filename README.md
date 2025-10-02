@@ -25,7 +25,7 @@ Aplicação desktop desenvolvida em Python com Flet para consulta e visualizaç�
 ```bash
 Python 3.8 ou superior
 pip (gerenciador de pacotes Python)
-Acesso à rede para conexão com SQL Server (10.223.241.20)
+Acesso à rede para conexão com SQL Server ( )
 Windows Authentication habilitada
 ```
 

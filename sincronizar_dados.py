@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 
 # Configurações do SQL Server
-SQL_SERVER = '10.223.241.20'  # Ex: 'localhost' ou '192.168.1.100'
+SQL_SERVER = ' '  # Ex: 'localhost' ou '192.168.1.100'
 SQL_DATABASE = 'DB_ALELO'
 SQL_TABLE = 'tb_base_contrato_consultor'
 
