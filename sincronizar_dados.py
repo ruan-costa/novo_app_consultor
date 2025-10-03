@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 
 # Configurações do SQL Server
-SQL_SERVER = ' '  # Ex: 'localhost' ou '192.168.1.100'
+SQL_SERVER = '10.223.141.20'  # Ex: 'localhost' ou '192.168.1.100'
 SQL_DATABASE = 'DB_ALELO'
 SQL_TABLE = 'tb_base_contrato_consultor'
 
@@ -32,7 +32,7 @@ def conectar_sqlserver():
 def conectar_sqlite():
     """Conecta ao banco SQLite local"""
     try:
-        diretorio_raiz = os.path.dirname(os.path.abspath(__file__))
+        diretorio_raiz = r'\\fileserver\Operacoes\Alelo\Alelo_PAT\MIS' #os.path.dirname(os.path.abspath(__file__))
         caminho_banco = os.path.join(diretorio_raiz, SQLITE_DB)
         
         if not os.path.exists(caminho_banco):

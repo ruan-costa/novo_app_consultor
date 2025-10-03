@@ -2,14 +2,31 @@ import flet as ft
 import os
 import sqlite3
 import sys
+import atexit
 
 usuario = os.getlogin()
+
+# Lista global para controlar conexões ativas
+_conexoes_globais = []
+
+# Registra limpeza automática ao sair
+def cleanup_final():
+    """Garante que tudo seja fechado ao sair"""
+    for conn in _conexoes_globais:
+        try:
+            conn.close()
+        except:
+            pass
+    _conexoes_globais.clear()
+    
+atexit.register(cleanup_final)
 
 def main(page: ft.Page):
     page.title = "App Consultor"
     page.window.width = 1400
     page.window.height = 800
     page.window.resizable = True
+    
     # Determina o caminho correto dos assets
     if getattr(sys, 'frozen', False):
         # Rodando como EXE
@@ -28,12 +45,43 @@ def main(page: ft.Page):
         )
     )
 
+    # Função para limpar recursos ao fechar
+    def limpar_recursos(e=None):
+        """Limpa todas as conexões ativas antes de fechar"""
+        try:
+            # Fecha todas as conexões abertas
+            for conn in _conexoes_globais:
+                try:
+                    conn.close()
+                except:
+                    pass
+            _conexoes_globais.clear()
+        except:
+            pass
+        finally:
+            # Força o encerramento do processo
+            try:
+                page.window.destroy()
+            except:
+                pass
+            os._exit(0)
+
+    # Registra o evento de fechamento da janela
+    page.window.on_event = lambda e: limpar_recursos() if e.data == "close" else None
+    page.window.prevent_close = False
+
     # Função para conectar ao banco de dados
     def conectar_banco():
         try:
-            diretorio_raiz = os.path.dirname(os.path.abspath(__file__))
-            caminho_banco = os.path.join(diretorio_raiz, 'consultor.db')
-            
+            if getattr(sys, 'frozen', False):
+                # Rodando como EXE
+                diretorio_raiz = os.path.dirname(sys.executable)
+            else:
+                # Rodando como script
+                diretorio_raiz = os.path.dirname(os.path.abspath(__file__))
+
+            caminho_banco = os.path.join(diretorio_raiz, "consultor.db")
+
             if not os.path.exists(caminho_banco):
                 page.snack_bar = ft.SnackBar(
                     content=ft.Text("⚠ Banco de dados não encontrado!", color=ft.Colors.WHITE),
@@ -43,7 +91,24 @@ def main(page: ft.Page):
                 page.update()
                 return None
             
-            return sqlite3.connect(caminho_banco)
+            # Configurações otimizadas para ambiente de rede
+            conn = sqlite3.connect(
+                caminho_banco,
+                timeout=30.0,  # Aumenta timeout para 30 segundos
+                check_same_thread=False,  # Permite uso em diferentes threads
+            )
+            
+            # Configurações para melhorar performance em rede
+            conn.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging
+            conn.execute("PRAGMA synchronous=NORMAL")  # Reduz sincronização
+            conn.execute("PRAGMA temp_store=MEMORY")  # Usa memória para temp
+            conn.execute("PRAGMA cache_size=10000")  # Aumenta cache
+            
+            # Registra a conexão na lista global
+            _conexoes_globais.append(conn)
+            
+            return conn
+            
         except sqlite3.Error as e:
             page.snack_bar = ft.SnackBar(
                 content=ft.Text(f"✗ Erro ao conectar: {e}", color=ft.Colors.WHITE),
@@ -106,8 +171,8 @@ def main(page: ft.Page):
                 cursor.execute(query)
             
             dados = cursor.fetchall()
-            conn.close()
             return dados
+            
         except sqlite3.Error as e:
             page.snack_bar = ft.SnackBar(
                 content=ft.Text(f"✗ Erro ao buscar dados: {e}", color=ft.Colors.WHITE),
@@ -115,8 +180,16 @@ def main(page: ft.Page):
             )
             page.snack_bar.open = True
             page.update()
-            conn.close()
             return []
+        finally:
+            # Sempre fecha a conexão e remove da lista
+            if conn:
+                try:
+                    conn.close()
+                    if conn in _conexoes_globais:
+                        _conexoes_globais.remove(conn)
+                except:
+                    pass
 
     anchor = ft.SearchBar(
         view_elevation=4,
@@ -190,6 +263,23 @@ def main(page: ft.Page):
     # Container para a tabela
     table_container = ft.Container()
 
+    # Dialog de loading
+    loading_dialog = ft.AlertDialog(
+        modal=True,
+        content=ft.Container(
+            content=ft.Column(
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                tight=True,
+                controls=[
+                    ft.ProgressRing(width=50, height=50),
+                    ft.Container(height=10),
+                    ft.Text("Aguarde, buscando dados...", size=16, weight="bold"),
+                ],
+            ),
+            padding=20,
+        ),
+    )
+
     # Função para criar a tabela
     def criar_tabela(dados):
         if not dados:
@@ -234,7 +324,8 @@ def main(page: ft.Page):
                         ft.DataCell(
                             ft.Container(
                                 content=ft.Text(str(col) if col else "", no_wrap=True, size=13),
-                                padding=ft.padding.symmetric(horizontal=4, vertical=4)
+                                padding=ft.padding.symmetric(horizontal=4, vertical=4),
+                                tooltip="Clique para copiar"
                             ),
                             on_tap=lambda e, v=col: copiar_celula(e, v) if v else None
                         )
@@ -244,24 +335,38 @@ def main(page: ft.Page):
                 ) for row in dados
             ]
         )
-    # Função para atualizar a tabela
+    
+    # Função para atualizar a tabela com loading
     def atualizar_tabela(filtro=''):
-        dados = buscar_dados(filtro)
-        table_container.content = criar_tabela(dados)
-        
-        if dados:
-            page.snack_bar = ft.SnackBar(
-                content=ft.Text(f"✓ {len(dados)} registro(s) encontrado(s)", color=ft.Colors.WHITE),
-                bgcolor=ft.Colors.BLUE_700,
-            )
-        else:
-            page.snack_bar = ft.SnackBar(
-                content=ft.Text("Nenhum registro encontrado", color=ft.Colors.WHITE),
-                bgcolor=ft.Colors.ORANGE_700,
-            )
-        
-        page.snack_bar.open = True
+        # Mostra dialog de loading
+        page.dialog = loading_dialog
+        loading_dialog.open = True
         page.update()
+        
+        try:
+            # Busca os dados
+            dados = buscar_dados(filtro)
+            
+            # Atualiza a tabela
+            table_container.content = criar_tabela(dados)
+            
+            if dados:
+                page.snack_bar = ft.SnackBar(
+                    content=ft.Text(f"✓ {len(dados)} registro(s) encontrado(s)", color=ft.Colors.WHITE),
+                    bgcolor=ft.Colors.BLUE_700,
+                )
+            else:
+                page.snack_bar = ft.SnackBar(
+                    content=ft.Text("Nenhum registro encontrado", color=ft.Colors.WHITE),
+                    bgcolor=ft.Colors.ORANGE_700,
+                )
+            
+            page.snack_bar.open = True
+            
+        finally:
+            # Fecha o dialog de loading
+            loading_dialog.open = False
+            page.update()
 
     # Função de pesquisa
     def pesquisar(e):
@@ -304,7 +409,7 @@ def main(page: ft.Page):
         alignment=ft.alignment.center,
         padding=ft.padding.all(10),
         content=ft.Text(
-            "© MISNEOBPO2025",
+            "© MISNEOHYPE2025",
             size=14,
             color=ft.Colors.BLACK87,
             italic=False
@@ -313,4 +418,11 @@ def main(page: ft.Page):
 
     page.add(search_row, scroll_table, footer)
 
-ft.app(target=main)
+if __name__ == "__main__":
+    try:
+        ft.app(target=main)
+    except Exception as e:
+        print(f"Erro: {e}")
+    finally:
+        # Força encerramento de todos os processos
+        sys.exit(0)
