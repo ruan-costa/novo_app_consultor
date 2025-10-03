@@ -220,9 +220,8 @@ def main(page: ft.Page):
     filtro_dropdown = ft.Dropdown(
         width=200,
         label="Filtrar por",
-        value="todos",
+        value="contrato",
         options=[
-            ft.dropdown.Option("todos", "Todos os Campos"),
             ft.dropdown.Option("contrato", "Contrato"),
             ft.dropdown.Option("cnpj", "CNPJ"),
             ft.dropdown.Option("raiz", "Raiz CNPJ"),
