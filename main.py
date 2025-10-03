@@ -3,6 +3,7 @@ import os
 import sqlite3
 import sys
 import atexit
+import asyncio
 
 usuario = os.getlogin()
 
@@ -26,7 +27,7 @@ def main(page: ft.Page):
     page.window.width = 1400
     page.window.height = 800
     page.window.resizable = True
-    
+
     # Determina o caminho correto dos assets
     if getattr(sys, 'frozen', False):
         # Rodando como EXE
@@ -49,7 +50,6 @@ def main(page: ft.Page):
     def limpar_recursos(e=None):
         """Limpa todas as conexões ativas antes de fechar"""
         try:
-            # Fecha todas as conexões abertas
             for conn in _conexoes_globais:
                 try:
                     conn.close()
@@ -59,14 +59,12 @@ def main(page: ft.Page):
         except:
             pass
         finally:
-            # Força o encerramento do processo
             try:
                 page.window.destroy()
             except:
                 pass
             os._exit(0)
 
-    # Registra o evento de fechamento da janela
     page.window.on_event = lambda e: limpar_recursos() if e.data == "close" else None
     page.window.prevent_close = False
 
@@ -74,10 +72,8 @@ def main(page: ft.Page):
     def conectar_banco():
         try:
             if getattr(sys, 'frozen', False):
-                # Rodando como EXE
                 diretorio_raiz = os.path.dirname(sys.executable)
             else:
-                # Rodando como script
                 diretorio_raiz = os.path.dirname(os.path.abspath(__file__))
 
             caminho_banco = os.path.join(diretorio_raiz, "consultor.db")
@@ -91,22 +87,18 @@ def main(page: ft.Page):
                 page.update()
                 return None
             
-            # Configurações otimizadas para ambiente de rede
             conn = sqlite3.connect(
                 caminho_banco,
-                timeout=30.0,  # Aumenta timeout para 30 segundos
-                check_same_thread=False,  # Permite uso em diferentes threads
+                timeout=30.0,
+                check_same_thread=False,
             )
             
-            # Configurações para melhorar performance em rede
-            conn.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging
-            conn.execute("PRAGMA synchronous=NORMAL")  # Reduz sincronização
-            conn.execute("PRAGMA temp_store=MEMORY")  # Usa memória para temp
-            conn.execute("PRAGMA cache_size=10000")  # Aumenta cache
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA temp_store=MEMORY")
+            conn.execute("PRAGMA cache_size=10000")
             
-            # Registra a conexão na lista global
             _conexoes_globais.append(conn)
-            
             return conn
             
         except sqlite3.Error as e:
@@ -126,7 +118,6 @@ def main(page: ft.Page):
         
         try:
             cursor = conn.cursor()
-            
             if filtro:
                 query = '''
                     SELECT 
@@ -148,9 +139,10 @@ def main(page: ft.Page):
                        OR razao_social LIKE ? 
                        OR email LIKE ?
                        OR raiz LIKE ?
+                       LIMIT 1000
                 '''
-                filtro_like = f'%{filtro}%'
-                cursor.execute(query, tuple([filtro_like] * 6))
+                filtro_like = f'{filtro}%'
+                cursor.execute(query, tuple([filtro_like]*6))
             else:
                 query = '''
                     SELECT 
@@ -182,7 +174,6 @@ def main(page: ft.Page):
             page.update()
             return []
         finally:
-            # Sempre fecha a conexão e remove da lista
             if conn:
                 try:
                     conn.close()
@@ -196,10 +187,10 @@ def main(page: ft.Page):
         divider_color=ft.Colors.BLUE_100,
         bar_hint_text="Contrato, CNPJ, E-mail, RAIZ CNPJ e Etc...",
         expand=True,
-        on_submit=lambda e: atualizar_tabela(e.control.value),
+        on_submit=lambda e: asyncio.run(atualizar_tabela_async(e.control.value)),
     )
 
-    # AppBar Barra superior
+    # AppBar
     page.appbar = ft.Container(
         height=60,
         border_radius=10,
@@ -213,44 +204,20 @@ def main(page: ft.Page):
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
-                ft.Image(
-                    src="assets/logo1.png",
-                    width=40,
-                    height=40,
-                    fit=ft.ImageFit.CONTAIN,
-                ),
-                ft.Text(
-                    f"Olá, {usuario}!",
-                    size=20,
-                    weight="bold",
-                    color=ft.Colors.WHITE,
-                    text_align="right",
-                ),
+                ft.Image(src="assets/logo1.png", width=40, height=40, fit=ft.ImageFit.CONTAIN),
+                ft.Text(f"Olá, {usuario}!", size=20, weight="bold", color=ft.Colors.WHITE),
                 ft.Row(
                     alignment=ft.MainAxisAlignment.CENTER,
-                    controls=[
-                        ft.Text(
-                            "Seja bem Vindo, ao App Consultor!",
-                            size=20,
-                            weight="bold",
-                            color=ft.Colors.WHITE,
-                            text_align="center",
-                        )
-                    ],
+                    controls=[ft.Text("Seja bem Vindo, ao App Consultor!", size=20, weight="bold", color=ft.Colors.WHITE)],
                     expand=True,
                 ),
-                ft.Image(
-                    src="assets/logo2.png",
-                    width=60,
-                    height=60,
-                    fit=ft.ImageFit.CONTAIN,
-                ),
+                ft.Image(src="assets/logo2.png", width=60, height=60, fit=ft.ImageFit.CONTAIN),
                 ft.Container(width=30),
             ]
         )
     )
 
-    # Função para copiar célula individual
+    # Copiar célula
     def copiar_celula(e, valor):
         page.set_clipboard(str(valor))
         page.snack_bar = ft.SnackBar(
@@ -260,7 +227,7 @@ def main(page: ft.Page):
         page.snack_bar.open = True
         page.update()
 
-    # Container para a tabela
+    # Container tabela
     table_container = ft.Container()
 
     # Dialog de loading
@@ -280,20 +247,14 @@ def main(page: ft.Page):
         ),
     )
 
-    # Função para criar a tabela
+    # Criar tabela
     def criar_tabela(dados):
         if not dados:
             return ft.Container(
-                content=ft.Text(
-                    "Nenhum registro encontrado",
-                    size=16,
-                    color=ft.Colors.GREY_600,
-                    text_align=ft.TextAlign.CENTER
-                ),
+                content=ft.Text("Nenhum registro encontrado", size=16, color=ft.Colors.GREY_600, text_align=ft.TextAlign.CENTER),
                 alignment=ft.alignment.center,
                 padding=10
             )
-        
         return ft.DataTable(
             border=ft.border.all(0.5, ft.Colors.BLACK38),
             border_radius=10,
@@ -335,21 +296,16 @@ def main(page: ft.Page):
                 ) for row in dados
             ]
         )
-    
-    # Função para atualizar a tabela com loading
-    def atualizar_tabela(filtro=''):
-        # Mostra dialog de loading
+
+    # Função assíncrona para atualizar tabela
+    async def atualizar_tabela_async(filtro=''):
         page.dialog = loading_dialog
         loading_dialog.open = True
         page.update()
-        
         try:
-            # Busca os dados
-            dados = buscar_dados(filtro)
-            
-            # Atualiza a tabela
+            loop = asyncio.get_event_loop()
+            dados = await loop.run_in_executor(None, lambda: buscar_dados(filtro))
             table_container.content = criar_tabela(dados)
-            
             if dados:
                 page.snack_bar = ft.SnackBar(
                     content=ft.Text(f"✓ {len(dados)} registro(s) encontrado(s)", color=ft.Colors.WHITE),
@@ -360,19 +316,15 @@ def main(page: ft.Page):
                     content=ft.Text("Nenhum registro encontrado", color=ft.Colors.WHITE),
                     bgcolor=ft.Colors.ORANGE_700,
                 )
-            
             page.snack_bar.open = True
-            
         finally:
-            # Fecha o dialog de loading
             loading_dialog.open = False
             page.update()
 
-    # Função de pesquisa
+    # Botão pesquisar
     def pesquisar(e):
-        atualizar_tabela(anchor.value)
+        asyncio.run(atualizar_tabela_async(anchor.value))
 
-    # Row com barra de pesquisa + botão
     search_row = ft.Row(
         alignment=ft.MainAxisAlignment.CENTER,
         spacing=10,
@@ -389,11 +341,10 @@ def main(page: ft.Page):
         ]
     )
 
-    # Carrega dados iniciais
+    # Dados iniciais
     dados_iniciais = buscar_dados()
     table_container.content = criar_tabela(dados_iniciais)
 
-    # Container com scroll para a tabela
     scroll_table = ft.Container(
         content=ft.Column(
             controls=[table_container],
@@ -404,16 +355,10 @@ def main(page: ft.Page):
         padding=5,
     )
 
-    # Footer com copyright
     footer = ft.Container(
         alignment=ft.alignment.center,
         padding=ft.padding.all(10),
-        content=ft.Text(
-            "© MISNEOHYPE2025",
-            size=14,
-            color=ft.Colors.BLACK87,
-            italic=False
-        )
+        content=ft.Text("© MISNEOHYPE2025", size=14, color=ft.Colors.BLACK87)
     )
 
     page.add(search_row, scroll_table, footer)
@@ -424,5 +369,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Erro: {e}")
     finally:
-        # Força encerramento de todos os processos
         sys.exit(0)
