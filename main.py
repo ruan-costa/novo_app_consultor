@@ -110,8 +110,8 @@ def main(page: ft.Page):
             page.update()
             return None
 
-    # Função para buscar dados do banco
-    def buscar_dados(filtro=''):
+    # Função para buscar dados do banco com filtro específico
+    def buscar_dados(filtro='', campo_filtro='todos'):
         conn = conectar_banco()
         if not conn:
             return []
@@ -119,30 +119,64 @@ def main(page: ft.Page):
         try:
             cursor = conn.cursor()
             if filtro:
-                query = '''
-                    SELECT 
-                        ROWID as id,
-                        contrato,
-                        razao_social,
-                        cnpj,
-                        raiz,
-                        consultor,
-                        contato,
-                        email,
-                        municipio,
-                        estado,
-                        produto
-                    FROM tb_base_contrato_consultor
-                    WHERE contrato LIKE ? 
-                       OR cnpj LIKE ? 
-                       OR consultor LIKE ?
-                       OR razao_social LIKE ? 
-                       OR email LIKE ?
-                       OR raiz LIKE ?
-                       LIMIT 1000
-                '''
-                filtro_like = f'{filtro}%'
-                cursor.execute(query, tuple([filtro_like]*6))
+                # Mapeamento dos campos
+                campos_map = {
+                    'contrato': 'contrato',
+                    'cnpj': 'cnpj',
+                    'raiz': 'raiz',
+                    'razao_social': 'razao_social',
+                    'consultor': 'consultor',
+                    'email': 'email'
+                }
+                
+                if campo_filtro == 'todos':
+                    # Busca em todos os campos (comportamento antigo)
+                    query = '''
+                        SELECT 
+                            ROWID as id,
+                            contrato,
+                            razao_social,
+                            cnpj,
+                            raiz,
+                            consultor,
+                            contato,
+                            email,
+                            municipio,
+                            estado,
+                            produto
+                        FROM tb_base_contrato_consultor
+                        WHERE contrato LIKE ? 
+                           OR cnpj LIKE ? 
+                           OR consultor LIKE ?
+                           OR razao_social LIKE ? 
+                           OR email LIKE ?
+                           OR raiz LIKE ?
+                        LIMIT 1000
+                    '''
+                    filtro_like = f'{filtro}%'
+                    cursor.execute(query, tuple([filtro_like]*6))
+                else:
+                    # Busca específica no campo selecionado
+                    campo_db = campos_map.get(campo_filtro, 'contrato')
+                    query = f'''
+                        SELECT 
+                            ROWID as id,
+                            contrato,
+                            razao_social,
+                            cnpj,
+                            raiz,
+                            consultor,
+                            contato,
+                            email,
+                            municipio,
+                            estado,
+                            produto
+                        FROM tb_base_contrato_consultor
+                        WHERE {campo_db} LIKE ?
+                        LIMIT 1000
+                    '''
+                    filtro_like = f'{filtro}%'
+                    cursor.execute(query, (filtro_like,))
             else:
                 query = '''
                     SELECT 
@@ -182,12 +216,34 @@ def main(page: ft.Page):
                 except:
                     pass
 
-    anchor = ft.SearchBar(
-        view_elevation=4,
-        divider_color=ft.Colors.BLUE_100,
-        bar_hint_text="Contrato, CNPJ, E-mail, RAIZ CNPJ e Etc...",
+    # Dropdown para seleção do campo de filtro
+    filtro_dropdown = ft.Dropdown(
+        width=200,
+        label="Filtrar por",
+        value="todos",
+        options=[
+            ft.dropdown.Option("todos", "Todos os Campos"),
+            ft.dropdown.Option("contrato", "Contrato"),
+            ft.dropdown.Option("cnpj", "CNPJ"),
+            ft.dropdown.Option("raiz", "Raiz CNPJ"),
+            ft.dropdown.Option("razao_social", "Razão Social"),
+            ft.dropdown.Option("consultor", "Consultor"),
+            ft.dropdown.Option("email", "E-mail"),
+        ],
+        text_size=14,
+        border_color=ft.Colors.BLUE,
+        focused_border_color=ft.Colors.BLUE,
+        border_radius=10,
+    )
+
+    anchor = ft.TextField(
+        hint_text="Digite o valor para pesquisar...",
         expand=True,
-        on_submit=lambda e: asyncio.run(atualizar_tabela_async(e.control.value)),
+        text_size=16,
+        border_color=ft.Colors.BLUE,
+        focused_border_color=ft.Colors.BLUE,
+        border_radius=10,
+        on_submit=lambda e: asyncio.run(atualizar_tabela_async(e.control.value, filtro_dropdown.value)),
     )
 
     # AppBar
@@ -298,17 +354,18 @@ def main(page: ft.Page):
         )
 
     # Função assíncrona para atualizar tabela
-    async def atualizar_tabela_async(filtro=''):
+    async def atualizar_tabela_async(filtro='', campo_filtro='todos'):
         page.dialog = loading_dialog
         loading_dialog.open = True
         page.update()
         try:
             loop = asyncio.get_event_loop()
-            dados = await loop.run_in_executor(None, lambda: buscar_dados(filtro))
+            dados = await loop.run_in_executor(None, lambda: buscar_dados(filtro, campo_filtro))
             table_container.content = criar_tabela(dados)
             if dados:
+                campo_texto = filtro_dropdown.options[[opt.key for opt in filtro_dropdown.options].index(campo_filtro)].text
                 page.snack_bar = ft.SnackBar(
-                    content=ft.Text(f"✓ {len(dados)} registro(s) encontrado(s)", color=ft.Colors.WHITE),
+                    content=ft.Text(f"✓ {len(dados)} registro(s) encontrado(s) em '{campo_texto}'", color=ft.Colors.WHITE),
                     bgcolor=ft.Colors.BLUE_700,
                 )
             else:
@@ -323,20 +380,34 @@ def main(page: ft.Page):
 
     # Botão pesquisar
     def pesquisar(e):
-        asyncio.run(atualizar_tabela_async(anchor.value))
+        asyncio.run(atualizar_tabela_async(anchor.value, filtro_dropdown.value))
 
     search_row = ft.Row(
         alignment=ft.MainAxisAlignment.CENTER,
+        vertical_alignment=ft.CrossAxisAlignment.START,
         spacing=10,
         controls=[
-            ft.Container(anchor, expand=True),
+            ft.Container(
+                content=filtro_dropdown,
+                height=56,
+            ),
+            ft.Container(
+                content=anchor,
+                expand=True,
+                height=56,
+            ),
             ft.Container(
                 content=ft.OutlinedButton(
-                    content=ft.Text("Pesquisar", size=20, weight="bold"),
+                    content=ft.Text("Pesquisar", size=18, weight="bold"),
                     on_click=pesquisar,
                     width=150,
-                    height=55,
+                    height=45,
+                    style=ft.ButtonStyle(
+                        shape=ft.RoundedRectangleBorder(radius=10),
+                        side=ft.BorderSide(1, ft.Colors.BLUE),
+                    ),
                 ),
+                height=48,
             )
         ]
     )
